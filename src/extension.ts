@@ -5,6 +5,7 @@ import { loadConfig, updateWorkspaceSetting } from "./config";
 import { buildMatchResults } from "./matcher";
 import { MaxFilesExceededError, scanFolder } from "./scanner";
 import { diffTitle, VersionCompareTreeProvider } from "./tree";
+import { CompareViewPanel, type CompareViewState } from "./webview";
 import type {
   CompareResult,
   CompareSummary,
@@ -34,23 +35,98 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(output, treeView, statusBar);
 
+  let compareView: CompareViewPanel;
+  const getCompareViewState = (): CompareViewState => ({
+    leftRoot: getStoredFolder(context, "left")?.fsPath,
+    rightRoot: getStoredFolder(context, "right")?.fsPath,
+    result: treeProvider.getResult(),
+  });
+  compareView = new CompareViewPanel(context, {
+    getState: getCompareViewState,
+    selectFolder: async (side) => {
+      await selectFolder(context, side);
+      updateIdleStatus(statusBar, context);
+      compareView.updateState();
+    },
+    compare: async () => {
+      await runCompare(context, treeProvider, statusBar, output);
+      compareView.updateState();
+    },
+    changeSettings: async () => {
+      await changeSettingsAndRecompare(context, treeProvider, statusBar, output);
+      compareView.updateState();
+    },
+    openDiff: async (itemId) => {
+      const item = findResultItem(treeProvider, itemId);
+      const result = treeProvider.getResult();
+      if (item && result) {
+        await openDiff(result, item);
+      }
+    },
+    openLeft: async (itemId) => {
+      const item = findResultItem(treeProvider, itemId);
+      const uri = item?.left?.uri ?? item?.leftCandidates?.[0]?.uri;
+      if (uri) {
+        await vscode.window.showTextDocument(uri, { preview: false });
+      }
+    },
+    openRight: async (itemId) => {
+      const item = findResultItem(treeProvider, itemId);
+      const uri = item?.right?.uri ?? item?.rightCandidates?.[0]?.uri;
+      if (uri) {
+        await vscode.window.showTextDocument(uri, { preview: false });
+      }
+    },
+    reveal: async (itemId) => {
+      const item = findResultItem(treeProvider, itemId);
+      const uri = item?.left?.uri ?? item?.right?.uri ?? item?.leftCandidates?.[0]?.uri ?? item?.rightCandidates?.[0]?.uri;
+      if (uri) {
+        await vscode.commands.executeCommand("revealInExplorer", uri);
+      }
+    },
+    pickMatch: async (itemId) => {
+      const item = findResultItem(treeProvider, itemId);
+      if (item) {
+        await pickMatch(context, item, treeProvider, statusBar, output);
+        compareView.updateState();
+      }
+    },
+    ignoreKey: async (itemId) => {
+      const item = findResultItem(treeProvider, itemId);
+      if (item) {
+        await ignoreKey(item, context, treeProvider, statusBar, output);
+        compareView.updateState();
+      }
+    },
+    exportJson: async () => exportJson(treeProvider.getResult()),
+    exportCsv: async () => exportCsv(treeProvider.getResult()),
+  });
+
   context.subscriptions.push(
+    vscode.commands.registerCommand("versionCompare.openCompareView", async () => {
+      compareView.show();
+    }),
     vscode.commands.registerCommand("versionCompare.selectLeftFolder", async () => {
       await selectFolder(context, "left");
       updateIdleStatus(statusBar, context);
+      compareView.updateState();
     }),
     vscode.commands.registerCommand("versionCompare.selectRightFolder", async () => {
       await selectFolder(context, "right");
       updateIdleStatus(statusBar, context);
+      compareView.updateState();
     }),
     vscode.commands.registerCommand("versionCompare.compare", async () => {
       await runCompare(context, treeProvider, statusBar, output);
+      compareView.updateState();
     }),
     vscode.commands.registerCommand("versionCompare.refresh", async () => {
       await runCompare(context, treeProvider, statusBar, output);
+      compareView.updateState();
     }),
     vscode.commands.registerCommand("versionCompare.changeSettingsAndRecompare", async () => {
       await changeSettingsAndRecompare(context, treeProvider, statusBar, output);
+      compareView.updateState();
     }),
     vscode.commands.registerCommand("versionCompare.openDiff", async (arg) => {
       const item = resolveResultItem(arg);
@@ -88,12 +164,14 @@ export function activate(context: vscode.ExtensionContext): void {
       const item = resolveResultItem(arg);
       if (item) {
         await pickMatch(context, item, treeProvider, statusBar, output);
+        compareView.updateState();
       }
     }),
     vscode.commands.registerCommand("versionCompare.ignoreKey", async (arg) => {
       const item = resolveResultItem(arg);
       if (item) {
         await ignoreKey(item, context, treeProvider, statusBar, output);
+        compareView.updateState();
       }
     }),
     vscode.commands.registerCommand("versionCompare.exportJson", async () => {
@@ -116,7 +194,7 @@ async function runCompare(
   treeProvider: VersionCompareTreeProvider,
   statusBar: vscode.StatusBarItem,
   output: vscode.OutputChannel,
-): Promise<void> {
+): Promise<CompareResult | undefined> {
   let leftRoot = getStoredFolder(context, "left");
   let rightRoot = getStoredFolder(context, "right");
 
@@ -127,7 +205,7 @@ async function runCompare(
     rightRoot = await selectFolder(context, "right");
   }
   if (!leftRoot || !rightRoot) {
-    return;
+    return undefined;
   }
 
   const config = loadConfig(context);
@@ -205,18 +283,20 @@ async function runCompare(
     treeProvider.setResult(result);
     updateResultStatus(statusBar, result);
     void treeViewRevealFirstResult(treeProvider).catch(() => undefined);
+    return result;
   } catch (error) {
     if (error instanceof MaxFilesExceededError) {
       void vscode.window.showErrorMessage(`Version Compare stopped: more than ${error.maxFiles} files were found.`);
-      return;
+      return undefined;
     }
     if (error instanceof Error && error.message.includes("cancelled")) {
       void vscode.window.showInformationMessage("Version Compare cancelled.");
-      return;
+      return undefined;
     }
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(`Error: ${message}`);
     void vscode.window.showErrorMessage(`Version Compare failed: ${message}`);
+    return undefined;
   }
 }
 
@@ -245,7 +325,7 @@ async function changeSettingsAndRecompare(
   treeProvider: VersionCompareTreeProvider,
   statusBar: vscode.StatusBarItem,
   output: vscode.OutputChannel,
-): Promise<void> {
+): Promise<CompareResult | undefined> {
   const config = loadConfig(context);
   const picked = await vscode.window.showQuickPick(
     [
@@ -279,7 +359,7 @@ async function changeSettingsAndRecompare(
   );
 
   if (!picked) {
-    return;
+    return undefined;
   }
 
   if (picked.id === "includeTypePrefix") {
@@ -289,7 +369,7 @@ async function changeSettingsAndRecompare(
       placeHolder: "Matching scope",
     });
     if (!value) {
-      return;
+      return undefined;
     }
     await updateWorkspaceSetting("matching.scope", value);
   } else if (picked.id === "strategy") {
@@ -297,7 +377,7 @@ async function changeSettingsAndRecompare(
       placeHolder: "Disambiguation strategy",
     });
     if (!value) {
-      return;
+      return undefined;
     }
     await updateWorkspaceSetting("disambiguation.strategy", value);
   } else if (picked.id === "contentCompare") {
@@ -305,15 +385,15 @@ async function changeSettingsAndRecompare(
       placeHolder: "Content compare method",
     });
     if (!value) {
-      return;
+      return undefined;
     }
     await updateWorkspaceSetting("contentCompare", value);
   } else {
     await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:local.version-compare");
-    return;
+    return undefined;
   }
 
-  await runCompare(context, treeProvider, statusBar, output);
+  return runCompare(context, treeProvider, statusBar, output);
 }
 
 async function openDiff(result: CompareResult, item: MatchResultItem): Promise<void> {
@@ -412,6 +492,10 @@ function resolveResultItem(arg: unknown): MatchResultItem | undefined {
     return maybeItem;
   }
   return undefined;
+}
+
+function findResultItem(treeProvider: VersionCompareTreeProvider, itemId: string): MatchResultItem | undefined {
+  return treeProvider.getResult()?.items.find((item) => item.id === itemId);
 }
 
 function summarize(items: MatchResultItem[]): CompareSummary {

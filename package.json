@@ -2,9 +2,10 @@
   "name": "version-compare",
   "displayName": "Version Compare",
   "description": "Compare two folders in VS Code with version/date-aware filename matching.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local",
   "license": "MIT",
+  "icon": "assets/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/shuan88/version-compare.git"
@@ -23,6 +24,7 @@
     "onView:versionCompare.results",
     "onCommand:versionCompare.selectLeftFolder",
     "onCommand:versionCompare.selectRightFolder",
+    "onCommand:versionCompare.openCompareView",
     "onCommand:versionCompare.compare",
     "onCommand:versionCompare.refresh",
     "onCommand:versionCompare.changeSettingsAndRecompare",
@@ -50,6 +52,12 @@
   },
   "contributes": {
     "commands": [
+      {
+        "command": "versionCompare.openCompareView",
+        "title": "Version Compare: Open Compare View",
+        "category": "Version Compare",
+        "icon": "$(layout)"
+      },
       {
         "command": "versionCompare.selectLeftFolder",
         "title": "Version Compare: Select Left Folder",
@@ -137,6 +145,11 @@
     },
     "menus": {
       "view/title": [
+        {
+          "command": "versionCompare.openCompareView",
+          "when": "view == versionCompare.results",
+          "group": "navigation@0"
+        },
         {
           "command": "versionCompare.compare",
           "when": "view == versionCompare.results",
