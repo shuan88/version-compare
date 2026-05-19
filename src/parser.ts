@@ -19,6 +19,7 @@ export interface ParsedName {
 export interface ParserSettings {
   versionPatterns: string[];
   datePattern: string;
+  ignoreNamePatterns?: string[];
 }
 
 const TOKEN_SPLIT_REGEX = /[_\-\s]+/;
@@ -32,8 +33,9 @@ export function parseFileName(fileName: string, settings: ParserSettings): Parse
   const body = typePrefix
     ? originalBaseName.slice(typePrefix.length).replace(/^[_\-\s]+/, "")
     : originalBaseName;
+  const normalizedBody = applyIgnoreNamePatterns(body, settings.ignoreNamePatterns ?? []);
 
-  const originalTokens = body.split(TOKEN_SPLIT_REGEX).filter(Boolean);
+  const originalTokens = normalizedBody.split(TOKEN_SPLIT_REGEX).filter(Boolean);
   const coreTokens = originalTokens.map(normalizeToken).filter(Boolean);
   const dateRegex = compileFullMatchRegex(settings.datePattern);
   const versionRegexes = settings.versionPatterns.map(compileFullMatchRegex);
@@ -68,7 +70,7 @@ export function parseFileName(fileName: string, settings: ParserSettings): Parse
     }
   }
 
-  const fallbackCoreTokens = coreTokens.length > 0 ? coreTokens : [normalizeToken(body || originalBaseName)];
+  const fallbackCoreTokens = coreTokens.length > 0 ? coreTokens : [normalizeToken(normalizedBody || body || originalBaseName)];
   const coreKey = fallbackCoreTokens.join("_");
 
   return {
@@ -175,4 +177,14 @@ function compileFullMatchRegex(pattern: string): RegExp {
   } catch {
     return /a^/;
   }
+}
+
+function applyIgnoreNamePatterns(value: string, patterns: string[]): string {
+  return patterns.reduce((current, pattern) => {
+    try {
+      return current.replace(new RegExp(pattern, "gi"), "");
+    } catch {
+      return current;
+    }
+  }, value);
 }

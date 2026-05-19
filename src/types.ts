@@ -16,6 +16,7 @@ export interface VersionCompareConfig {
     extPolicy: ExtPolicy;
     versionPatterns: string[];
     datePattern: string;
+    ignoreNamePatterns: string[];
   };
   disambiguation: {
     strategy: DisambiguationStrategy;

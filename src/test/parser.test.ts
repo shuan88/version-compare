@@ -6,6 +6,7 @@ import { DEFAULT_VERSION_PATTERNS } from "../defaults";
 const settings = {
   versionPatterns: DEFAULT_VERSION_PATTERNS,
   datePattern: "^\\d{8}$",
+  ignoreNamePatterns: [],
 };
 
 test("parses type prefix, trailing date, and near-tail version", () => {
@@ -41,4 +42,24 @@ test("version distance compares parsed numeric components", () => {
   const right = parseFileName("Report_1.0P3.txt", settings);
 
   assert.equal(versionDistance(left.versionParsed, right.versionParsed), 1);
+});
+
+test("removes configured ignored characters before tokenization", () => {
+  const parsed = parseFileName("G-RPT_Sales(Reviewed)#_1.0P2.xlsx", {
+    ...settings,
+    ignoreNamePatterns: ["[()#]"],
+  });
+
+  assert.equal(parsed.typePrefix, "G-RPT");
+  assert.equal(parsed.coreKey, "salesreviewed");
+  assert.equal(parsed.versionRaw, "1.0P2");
+});
+
+test("removes configured ignored marker text before matching", () => {
+  const parsed = parseFileName("G-RPT_Sales_COPY_1.0.xlsx", {
+    ...settings,
+    ignoreNamePatterns: ["(?:copy|副本)"],
+  });
+
+  assert.equal(parsed.coreKey, "sales");
 });

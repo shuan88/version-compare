@@ -15,6 +15,7 @@ function config(overrides: Partial<VersionCompareConfig> = {}): VersionCompareCo
       extPolicy: "sameExtOnly",
       versionPatterns: DEFAULT_VERSION_PATTERNS,
       datePattern: "^\\d{8}$",
+      ignoreNamePatterns: [],
     },
     disambiguation: {
       strategy: "minDistanceGreedy",
@@ -41,7 +42,7 @@ function config(overrides: Partial<VersionCompareConfig> = {}): VersionCompareCo
   };
 }
 
-function entry(relativePath: string): FileEntry {
+function entry(relativePath: string, ignoreNamePatterns: string[] = []): FileEntry {
   const fileName = relativePath.split("/").pop() ?? relativePath;
   const dot = fileName.lastIndexOf(".");
   const ext = dot >= 0 ? fileName.slice(dot + 1).toLocaleLowerCase() : "";
@@ -59,6 +60,7 @@ function entry(relativePath: string): FileEntry {
     parsed: parseFileName(fileName, {
       versionPatterns: DEFAULT_VERSION_PATTERNS,
       datePattern: "^\\d{8}$",
+      ignoreNamePatterns,
     }),
   };
 }
@@ -124,4 +126,49 @@ test("marks multi-candidate bucket ambiguous when version parsing fails", () => 
   );
 
   assert.equal(ambiguous.items[0].status, "ambiguous");
+});
+
+test("matches recursively in the same relative subfolder by default", () => {
+  const result = buildMatchResults(
+    [entry("Dept/A/G-RPT_Sales_1.0.xlsx")],
+    [entry("Dept/A/G-RPT_Sales_1.1.xlsx")],
+    config(),
+  );
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].status, "paired-pending");
+});
+
+test("does not match across different subfolders in sameFolder scope", () => {
+  const result = buildMatchResults(
+    [entry("Dept/A/G-RPT_Sales_1.0.xlsx")],
+    [entry("Dept/B/G-RPT_Sales_1.0.xlsx")],
+    config(),
+  );
+
+  assert.equal(result.items.filter((item) => item.status === "left-only").length, 1);
+  assert.equal(result.items.filter((item) => item.status === "right-only").length, 1);
+});
+
+test("matches across subfolders when scope is anywhere", () => {
+  const result = buildMatchResults(
+    [entry("Dept/A/G-RPT_Sales_1.0.xlsx")],
+    [entry("Dept/B/G-RPT_Sales_1.0.xlsx")],
+    config({ matching: { scope: "anywhere" } as VersionCompareConfig["matching"] }),
+  );
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].status, "paired-pending");
+});
+
+test("matches files after configured ignored name patterns are removed", () => {
+  const ignored = ["[()#]"];
+  const result = buildMatchResults(
+    [entry("Dept/A/G-RPT_Sales(Reviewed)#_1.0.xlsx", ignored)],
+    [entry("Dept/A/G-RPT_SalesReviewed_1.0.xlsx", ignored)],
+    config({ matching: { ignoreNamePatterns: ignored } as VersionCompareConfig["matching"] }),
+  );
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].status, "paired-pending");
 });

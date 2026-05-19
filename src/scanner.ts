@@ -96,6 +96,7 @@ export async function scanFolder(
         parsed: parseFileName(fileName, {
           versionPatterns: config.matching.versionPatterns,
           datePattern: config.matching.datePattern,
+          ignoreNamePatterns: config.matching.ignoreNamePatterns,
         }),
       });
 

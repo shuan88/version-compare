@@ -2,7 +2,7 @@
   "name": "version-compare",
   "displayName": "Version Compare",
   "description": "Compare two folders in VS Code with version/date-aware filename matching.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "local",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -296,6 +296,14 @@
           "type": "string",
           "default": "^\\d{8}$",
           "description": "Regex used to identify a trailing date token."
+        },
+        "versionCompare.matching.ignoreNamePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Regex patterns removed from the filename stem after type-prefix extraction and before tokenization. Use this to ignore specific characters or marker text during matching."
         },
         "versionCompare.disambiguation.strategy": {
           "type": "string",

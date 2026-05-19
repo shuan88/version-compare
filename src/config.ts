@@ -26,6 +26,7 @@ export function loadConfig(context?: vscode.ExtensionContext): VersionCompareCon
       extPolicy: config.get<ExtPolicy>("matching.extPolicy", "sameExtOnly"),
       versionPatterns: config.get<string[]>("matching.versionPatterns", DEFAULT_VERSION_PATTERNS),
       datePattern: config.get<string>("matching.datePattern", "^\\d{8}$"),
+      ignoreNamePatterns: config.get<string[]>("matching.ignoreNamePatterns", []),
     },
     disambiguation: {
       strategy: config.get<DisambiguationStrategy>("disambiguation.strategy", "minDistanceGreedy"),
