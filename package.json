@@ -1,0 +1,343 @@
+{
+  "name": "version-compare",
+  "displayName": "Version Compare",
+  "description": "Compare two folders in VS Code with version/date-aware filename matching.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shuan88/version-compare.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shuan88/version-compare/issues"
+  },
+  "homepage": "https://github.com/shuan88/version-compare#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:versionCompare.results",
+    "onCommand:versionCompare.selectLeftFolder",
+    "onCommand:versionCompare.selectRightFolder",
+    "onCommand:versionCompare.compare",
+    "onCommand:versionCompare.refresh",
+    "onCommand:versionCompare.changeSettingsAndRecompare",
+    "onCommand:versionCompare.openDiff",
+    "onCommand:versionCompare.openLeft",
+    "onCommand:versionCompare.openRight",
+    "onCommand:versionCompare.revealInExplorer",
+    "onCommand:versionCompare.copyPaths",
+    "onCommand:versionCompare.pickMatch",
+    "onCommand:versionCompare.ignoreKey",
+    "onCommand:versionCompare.exportJson",
+    "onCommand:versionCompare.exportCsv"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test out/test/*.test.js",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.5"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "versionCompare.selectLeftFolder",
+        "title": "Version Compare: Select Left Folder",
+        "category": "Version Compare",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "versionCompare.selectRightFolder",
+        "title": "Version Compare: Select Right Folder",
+        "category": "Version Compare",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "versionCompare.compare",
+        "title": "Version Compare: Compare",
+        "category": "Version Compare",
+        "icon": "$(compare-changes)"
+      },
+      {
+        "command": "versionCompare.refresh",
+        "title": "Version Compare: Refresh",
+        "category": "Version Compare",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "versionCompare.changeSettingsAndRecompare",
+        "title": "Version Compare: Change Settings and Re-compare",
+        "category": "Version Compare",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "versionCompare.openDiff",
+        "title": "Open Diff",
+        "category": "Version Compare",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "versionCompare.openLeft",
+        "title": "Open Left",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.openRight",
+        "title": "Open Right",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.revealInExplorer",
+        "title": "Reveal in Explorer",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.copyPaths",
+        "title": "Copy Path(s)",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.pickMatch",
+        "title": "Pick Match...",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.ignoreKey",
+        "title": "Ignore this Key",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.exportJson",
+        "title": "Export JSON Report...",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.exportCsv",
+        "title": "Export CSV Report...",
+        "category": "Version Compare"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "versionCompare.results",
+          "name": "Version Compare"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "versionCompare.compare",
+          "when": "view == versionCompare.results",
+          "group": "navigation@1"
+        },
+        {
+          "command": "versionCompare.refresh",
+          "when": "view == versionCompare.results",
+          "group": "navigation@2"
+        },
+        {
+          "command": "versionCompare.changeSettingsAndRecompare",
+          "when": "view == versionCompare.results",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "versionCompare.openDiff",
+          "when": "view == versionCompare.results && viewItem == paired",
+          "group": "inline@1"
+        },
+        {
+          "command": "versionCompare.pickMatch",
+          "when": "view == versionCompare.results && viewItem == ambiguous",
+          "group": "inline@1"
+        },
+        {
+          "command": "versionCompare.openLeft",
+          "when": "view == versionCompare.results && viewItem =~ /paired|leftOnly|error/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "versionCompare.openRight",
+          "when": "view == versionCompare.results && viewItem =~ /paired|rightOnly|error/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "versionCompare.revealInExplorer",
+          "when": "view == versionCompare.results && viewItem =~ /paired|leftOnly|rightOnly|error/",
+          "group": "navigation@3"
+        },
+        {
+          "command": "versionCompare.copyPaths",
+          "when": "view == versionCompare.results && viewItem =~ /paired|leftOnly|rightOnly|ambiguous|error/",
+          "group": "navigation@4"
+        },
+        {
+          "command": "versionCompare.ignoreKey",
+          "when": "view == versionCompare.results && viewItem =~ /paired|leftOnly|rightOnly|ambiguous/",
+          "group": "z_ignore@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "versionCompare.openDiff",
+          "when": "false"
+        },
+        {
+          "command": "versionCompare.openLeft",
+          "when": "false"
+        },
+        {
+          "command": "versionCompare.openRight",
+          "when": "false"
+        },
+        {
+          "command": "versionCompare.revealInExplorer",
+          "when": "false"
+        },
+        {
+          "command": "versionCompare.copyPaths",
+          "when": "false"
+        },
+        {
+          "command": "versionCompare.pickMatch",
+          "when": "false"
+        },
+        {
+          "command": "versionCompare.ignoreKey",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Version Compare",
+      "properties": {
+        "versionCompare.excludeGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".git/**",
+            "**/.git/**",
+            "node_modules/**",
+            "**/node_modules/**",
+            ".vscode/**",
+            "**/.vscode/**",
+            "**/*.tmp"
+          ],
+          "description": "Glob patterns excluded from both left and right scans."
+        },
+        "versionCompare.maxFiles": {
+          "type": "number",
+          "default": 50000,
+          "minimum": 1,
+          "description": "Maximum total file count allowed before the compare is stopped."
+        },
+        "versionCompare.matching.scope": {
+          "type": "string",
+          "enum": [
+            "sameFolder",
+            "anywhere"
+          ],
+          "default": "sameFolder",
+          "description": "Whether matching is restricted to the same relative folder or can search globally."
+        },
+        "versionCompare.matching.includeTypePrefix": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include leading type prefixes such as G-RPT in the match key."
+        },
+        "versionCompare.matching.extPolicy": {
+          "type": "string",
+          "enum": [
+            "sameExtOnly"
+          ],
+          "default": "sameExtOnly",
+          "description": "Extension matching policy. v1 always requires identical extensions."
+        },
+        "versionCompare.matching.versionPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "^(?:v|ver|version)?\\d+(?:\\.\\d+)*(?:p\\d+)?$",
+            "^\\d+(?:\\.\\d+)*(?:[a-z]+\\d*)?$"
+          ],
+          "description": "Regex list used to identify version tokens near the end of a filename. Patterns are tested case-insensitively."
+        },
+        "versionCompare.matching.datePattern": {
+          "type": "string",
+          "default": "^\\d{8}$",
+          "description": "Regex used to identify a trailing date token."
+        },
+        "versionCompare.disambiguation.strategy": {
+          "type": "string",
+          "enum": [
+            "minDistanceGreedy",
+            "latestOnEachSide",
+            "manualPreferred"
+          ],
+          "default": "minDistanceGreedy",
+          "description": "Strategy for matching multiple candidates within the same match key."
+        },
+        "versionCompare.disambiguation.ambiguityDeltaThreshold": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "description": "Minimum score gap required between the best pair and a competing pair before auto-pairing."
+        },
+        "versionCompare.disambiguation.versionMajorMismatchAsAmbiguous": {
+          "type": "boolean",
+          "default": false,
+          "description": "Treat candidate pairs with different major versions as ambiguous."
+        },
+        "versionCompare.contentCompare": {
+          "type": "string",
+          "enum": [
+            "size+hash",
+            "size+mtime",
+            "sizeOnly"
+          ],
+          "default": "size+hash",
+          "description": "Method used to classify paired files as identical or modified."
+        },
+        "versionCompare.manualMatches": {
+          "type": "object",
+          "default": {},
+          "description": "Manual match overrides keyed by match key or match key plus a suffix."
+        },
+        "versionCompare.ignoreKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Match keys ignored during compare."
+        },
+        "versionCompare.displayMode": {
+          "type": "string",
+          "enum": [
+            "coreKey",
+            "originalName"
+          ],
+          "default": "coreKey",
+          "description": "Controls whether result labels prefer normalized core keys or original filenames."
+        }
+      }
+    }
+  }
+}
