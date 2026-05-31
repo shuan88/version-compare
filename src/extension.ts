@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { classifyPairedItems } from "./comparer";
-import { loadConfig, updateWorkspaceSetting } from "./config";
+import { loadConfig, PRESET_IGNORE_RULES, type PresetIgnoreRule, updateWorkspaceSetting } from "./config";
 import { buildMatchResults } from "./matcher";
 import { MaxFilesExceededError, scanFolder } from "./scanner";
 import { diffTitle, VersionCompareTreeProvider } from "./tree";
@@ -19,6 +19,10 @@ import type {
 const LEFT_FOLDER_KEY = "versionCompare.leftFolder";
 const RIGHT_FOLDER_KEY = "versionCompare.rightFolder";
 const MANUAL_MATCHES_STATE_KEY = "manualMatches";
+
+interface PresetIgnoreQuickPickItem extends vscode.QuickPickItem {
+  rule: PresetIgnoreRule;
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Version Compare");
@@ -88,6 +92,13 @@ export function activate(context: vscode.ExtensionContext): void {
       const item = findResultItem(treeProvider, itemId);
       if (item) {
         await pickMatch(context, item, treeProvider, statusBar, output);
+        compareView.updateState();
+      }
+    },
+    forceMatch: async (itemId) => {
+      const item = findResultItem(treeProvider, itemId);
+      if (item) {
+        await forceMatch(context, item, treeProvider, statusBar, output);
         compareView.updateState();
       }
     },
@@ -164,6 +175,13 @@ export function activate(context: vscode.ExtensionContext): void {
       const item = resolveResultItem(arg);
       if (item) {
         await pickMatch(context, item, treeProvider, statusBar, output);
+        compareView.updateState();
+      }
+    }),
+    vscode.commands.registerCommand("versionCompare.forceMatch", async (arg) => {
+      const item = resolveResultItem(arg);
+      if (item) {
+        await forceMatch(context, item, treeProvider, statusBar, output);
         compareView.updateState();
       }
     }),
@@ -350,6 +368,11 @@ async function changeSettingsAndRecompare(
         description: "size+hash, size+mtime, or sizeOnly.",
       },
       {
+        id: "presetIgnoreRules",
+        label: "Toggle preset ignore rules",
+        description: "Checkbox presets for common filename differences.",
+      },
+      {
         id: "openSettings",
         label: "Open Version Compare settings",
         description: "Edit advanced parser, exclude, override, and ignore settings.",
@@ -388,6 +411,8 @@ async function changeSettingsAndRecompare(
       return undefined;
     }
     await updateWorkspaceSetting("contentCompare", value);
+  } else if (picked.id === "presetIgnoreRules") {
+    await togglePresetIgnoreRules();
   } else {
     await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:local.version-compare");
     return undefined;
@@ -432,18 +457,42 @@ async function pickMatch(
     return;
   }
 
-  const config = loadConfig(context);
   const key = `${item.bucketKey}::${left.relativePath}`;
-  const nextManualMatches: Record<string, ManualMatch> = {
-    ...config.manualMatches,
-    [key]: {
-      leftRelPath: left.relativePath,
-      rightRelPath: right.relativePath,
-    },
-  };
+  await saveManualMatch(context, key, left, right);
+  await runCompare(context, treeProvider, statusBar, output);
+}
 
-  await context.workspaceState.update(MANUAL_MATCHES_STATE_KEY, nextManualMatches);
-  await updateWorkspaceSetting("manualMatches", nextManualMatches);
+async function forceMatch(
+  context: vscode.ExtensionContext,
+  item: MatchResultItem,
+  treeProvider: VersionCompareTreeProvider,
+  statusBar: vscode.StatusBarItem,
+  output: vscode.OutputChannel,
+): Promise<void> {
+  const result = treeProvider.getResult();
+  if (!result) {
+    return;
+  }
+
+  let left: FileEntry | undefined;
+  let right: FileEntry | undefined;
+  if (item.status === "left-only" && item.left) {
+    left = item.left;
+    right = await pickForceCandidate("Select right file to force match", collectUnmatchedCandidates(result, "right"));
+  } else if (item.status === "right-only" && item.right) {
+    right = item.right;
+    left = await pickForceCandidate("Select left file to force match", collectUnmatchedCandidates(result, "left"));
+  }
+
+  if (!left || !right) {
+    if (item.status === "left-only" || item.status === "right-only") {
+      void vscode.window.showWarningMessage("No available opposite-side candidate to force match.");
+    }
+    return;
+  }
+
+  const key = `manual::${left.relativePath}::${right.relativePath}`;
+  await saveManualMatch(context, key, left, right);
   await runCompare(context, treeProvider, statusBar, output);
 }
 
@@ -464,6 +513,83 @@ async function pickCandidate(title: string, candidates: FileEntry[]): Promise<Fi
     { title },
   );
   return picked?.entry;
+}
+
+async function pickForceCandidate(title: string, candidates: FileEntry[]): Promise<FileEntry | undefined> {
+  if (candidates.length === 0) {
+    return undefined;
+  }
+  return pickCandidate(title, candidates);
+}
+
+function collectUnmatchedCandidates(result: CompareResult, side: "left" | "right"): FileEntry[] {
+  const entries: FileEntry[] = [];
+  const seen = new Set<string>();
+  for (const item of result.items) {
+    const candidates = side === "left"
+      ? [
+        item.status === "left-only" ? item.left : undefined,
+        ...(item.leftCandidates ?? []),
+      ]
+      : [
+        item.status === "right-only" ? item.right : undefined,
+        ...(item.rightCandidates ?? []),
+      ];
+    for (const candidate of candidates) {
+      if (candidate && !seen.has(candidate.relativePath)) {
+        entries.push(candidate);
+        seen.add(candidate.relativePath);
+      }
+    }
+  }
+  return entries;
+}
+
+async function saveManualMatch(
+  context: vscode.ExtensionContext,
+  key: string,
+  left: FileEntry,
+  right: FileEntry,
+): Promise<void> {
+  const config = loadConfig(context);
+  const nextManualMatches: Record<string, ManualMatch> = {
+    ...config.manualMatches,
+    [key]: {
+      leftRelPath: left.relativePath,
+      rightRelPath: right.relativePath,
+    },
+  };
+
+  await context.workspaceState.update(MANUAL_MATCHES_STATE_KEY, nextManualMatches);
+  await updateWorkspaceSetting("manualMatches", nextManualMatches);
+}
+
+async function togglePresetIgnoreRules(): Promise<void> {
+  const settings = vscode.workspace.getConfiguration("versionCompare");
+  const items: PresetIgnoreQuickPickItem[] = PRESET_IGNORE_RULES.map((rule) => ({
+      label: rule.label,
+      description: rule.pattern,
+      detail: rule.description,
+      picked: settings.get<boolean>(rule.settingKey, false),
+      rule,
+    }));
+  const selected = await vscode.window.showQuickPick<PresetIgnoreQuickPickItem>(
+    items,
+    {
+      canPickMany: true,
+      title: "Preset ignore rules",
+      placeHolder: "Select built-in filename ignore regex presets.",
+    },
+  );
+
+  if (!selected) {
+    return;
+  }
+
+  const selectedIds = new Set(selected.map((item) => item.rule.id));
+  for (const rule of PRESET_IGNORE_RULES) {
+    await updateWorkspaceSetting(rule.settingKey, selectedIds.has(rule.id));
+  }
 }
 
 async function ignoreKey(

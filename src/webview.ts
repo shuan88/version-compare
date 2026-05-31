@@ -17,6 +17,7 @@ export interface CompareViewCallbacks {
   openRight(itemId: string): Promise<void>;
   reveal(itemId: string): Promise<void>;
   pickMatch(itemId: string): Promise<void>;
+  forceMatch(itemId: string): Promise<void>;
   ignoreKey(itemId: string): Promise<void>;
   exportJson(): Promise<void>;
   exportCsv(): Promise<void>;
@@ -35,6 +36,7 @@ interface WebviewResultItem {
   crossedType: boolean;
   canDiff: boolean;
   canPick: boolean;
+  canForce: boolean;
 }
 
 export class CompareViewPanel {
@@ -130,6 +132,11 @@ export class CompareViewPanel {
       case "pickMatch":
         if (itemId) {
           await this.runBusyTask(() => this.callbacks.pickMatch(itemId));
+        }
+        return;
+      case "forceMatch":
+        if (itemId) {
+          await this.runBusyTask(() => this.callbacks.forceMatch(itemId));
         }
         return;
       case "ignoreKey":
@@ -658,6 +665,7 @@ export class CompareViewPanel {
       if (item.rightPath) actions.push(actionButton("openRight", item.id, "Open R"));
       if (item.leftPath || item.rightPath) actions.push(actionButton("reveal", item.id, "Reveal"));
       if (item.canPick) actions.push(actionButton("pickMatch", item.id, "Pick"));
+      if (item.canForce) actions.push(actionButton("forceMatch", item.id, "Force"));
       actions.push(actionButton("ignoreKey", item.id, "Ignore"));
       return '<div class="statuscell">' +
         '<div class="statusline"><span class="dot ' + (dotClass[item.status] ?? "") + '"></span><span>' + escapeHtml(label) + '</span>' +
@@ -726,6 +734,7 @@ function serializeItem(item: MatchResultItem): WebviewResultItem {
     crossedType: Boolean(item.crossedType),
     canDiff: item.status === "paired-identical" || item.status === "paired-modified",
     canPick: item.status === "ambiguous",
+    canForce: item.status === "left-only" || item.status === "right-only",
   };
 }
 

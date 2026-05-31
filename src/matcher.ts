@@ -30,8 +30,9 @@ export function buildMatchResults(
   config: VersionCompareConfig,
 ): MatchBuildResult {
   const diagnostics: string[] = [];
-  const buckets = buildBuckets(leftFiles, rightFiles, config);
   const items: MatchResultItem[] = [];
+  const manualApplied = applyGlobalManualMatches(leftFiles, rightFiles, config, items, diagnostics);
+  const buckets = buildBuckets(manualApplied.leftFiles, manualApplied.rightFiles, config);
 
   for (const bucket of [...buckets.values()].sort((a, b) => a.bucketKey.localeCompare(b.bucketKey))) {
     diagnostics.push(
@@ -96,6 +97,40 @@ export function buildMatchResults(
   return {
     items,
     diagnostics,
+  };
+}
+
+function applyGlobalManualMatches(
+  leftFiles: FileEntry[],
+  rightFiles: FileEntry[],
+  config: VersionCompareConfig,
+  items: MatchResultItem[],
+  diagnostics: string[],
+): { leftFiles: FileEntry[]; rightFiles: FileEntry[] } {
+  const leftByPath = new Map(leftFiles.map((entry) => [entry.relativePath, entry]));
+  const rightByPath = new Map(rightFiles.map((entry) => [entry.relativePath, entry]));
+  const usedLeft = new Set<string>();
+  const usedRight = new Set<string>();
+
+  for (const [key, manual] of Object.entries(config.manualMatches)) {
+    const left = leftByPath.get(manual.leftRelPath);
+    const right = rightByPath.get(manual.rightRelPath);
+    if (!left || !right || usedLeft.has(left.relativePath) || usedRight.has(right.relativePath)) {
+      continue;
+    }
+
+    const bucket = manualBucket(left, right, config);
+    items.push(pairItem(bucket, left, right, `manual force match (${key})`));
+    diagnostics.push(
+      `manualMatch=${key} left=${left.relativePath} right=${right.relativePath} leftKey=${makeKeys(left, config).bucketKey} rightKey=${makeKeys(right, config).bucketKey}`,
+    );
+    usedLeft.add(left.relativePath);
+    usedRight.add(right.relativePath);
+  }
+
+  return {
+    leftFiles: leftFiles.filter((entry) => !usedLeft.has(entry.relativePath)),
+    rightFiles: rightFiles.filter((entry) => !usedRight.has(entry.relativePath)),
   };
 }
 
@@ -444,4 +479,19 @@ function isCrossType(left: FileEntry, right: FileEntry): boolean {
   const leftType = left.parsed.typePrefixNormalized;
   const rightType = right.parsed.typePrefixNormalized;
   return !!leftType && !!rightType && leftType !== rightType;
+}
+
+function manualBucket(left: FileEntry, right: FileEntry, config: VersionCompareConfig): Bucket {
+  const leftKeys = makeKeys(left, config);
+  const rightKeys = makeKeys(right, config);
+  const displayKey = leftKeys.displayKey === rightKeys.displayKey
+    ? leftKeys.displayKey
+    : `${leftKeys.displayKey} ↔ ${rightKeys.displayKey}`;
+  return {
+    bucketKey: `manual/${left.relativePath}=>${right.relativePath}`,
+    matchKey: `${leftKeys.matchKey}=>${rightKeys.matchKey}`,
+    displayKey,
+    left: [left],
+    right: [right],
+  };
 }

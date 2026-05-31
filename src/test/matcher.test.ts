@@ -172,3 +172,22 @@ test("matches files after configured ignored name patterns are removed", () => {
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0].status, "paired-pending");
 });
+
+test("manual matches force pairing across different match keys", () => {
+  const result = buildMatchResults(
+    [entry("Dept/A/G-RPT_Sales_Main_1.0.xlsx")],
+    [entry("Dept/A/G-RPT_Revenue_Main_9.9.xlsx")],
+    config({
+      manualMatches: {
+        "manual::Dept/A/G-RPT_Sales_Main_1.0.xlsx::Dept/A/G-RPT_Revenue_Main_9.9.xlsx": {
+          leftRelPath: "Dept/A/G-RPT_Sales_Main_1.0.xlsx",
+          rightRelPath: "Dept/A/G-RPT_Revenue_Main_9.9.xlsx",
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].status, "paired-pending");
+  assert.match(result.items[0].reason, /manual force match/);
+});

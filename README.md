@@ -24,6 +24,7 @@ Version Compare is a VS Code extension for comparing two local folders with file
 4. 在結果表格查看 Left / Status / Right。
 5. 對 `Modified` 或 `Identical` row 按 `Diff`，會開啟 VS Code 內建 diff。
 6. 對 `Ambiguous` row 按 `Pick` 可手動指定配對。
+7. 對 `LeftOnly` 或 `RightOnly` row 按 `Force` 可強制指定另一側檔案配對。
 
 也可以使用命令：
 
@@ -32,6 +33,7 @@ Version Compare is a VS Code extension for comparing two local folders with file
 - `Version Compare: Compare`
 - `Version Compare: Refresh`
 - `Version Compare: Change Settings and Re-compare`
+- `Force Match...`，在 `LeftOnly` / `RightOnly` 項目的 context menu 中使用
 
 左側 Explorer 也會顯示 `Version Compare` TreeView。
 
@@ -63,6 +65,20 @@ Version Compare is a VS Code extension for comparing two local folders with file
 注意：`anywhere` 容錯較高，但也比較容易誤配。
 
 ### 忽略特定字元或文字
+
+如果不想自己寫 regex，可以先用內建 preset。這些 preset 在 VS Code Settings UI 會以 checkbox 顯示，也可以從 `Version Compare: Change Settings and Re-compare` 裡選 `Toggle preset ignore rules`。
+
+| Checkbox setting | 作用 | 實際 regex |
+| --- | --- | --- |
+| `versionCompare.matching.preset.ignoreParentheses` | 忽略 `(` 和 `)` 字元 | `[()]` |
+| `versionCompare.matching.preset.ignoreParenthesizedText` | 忽略整段括號內容，例如 `(old)` | `\\([^)]*\\)` |
+| `versionCompare.matching.preset.ignoreSquareBrackets` | 忽略 `[` 和 `]` 字元 | `[\\[\\]]` |
+| `versionCompare.matching.preset.ignoreBracketedText` | 忽略整段中括號內容，例如 `[old]` | `\\[[^\\]]*\\]` |
+| `versionCompare.matching.preset.ignoreHashMarks` | 忽略 `#` 和 `＃` | `[#＃]` |
+| `versionCompare.matching.preset.ignoreCopyMarkers` | 忽略 `copy`、`副本`、`複本`、`拷貝` | `(?:copy\|副本\|複本\|拷貝)` |
+| `versionCompare.matching.preset.ignoreCommonNoiseWords` | 忽略 `draft`、`final`、`old`、`new`、`最新版` 等字 | `(?:draft\|final\|old\|new\|最新版\|新版\|舊版)` |
+
+Preset 會和自訂 `ignoreNamePatterns` 合併使用。若檔名中的 `draft`、`final` 對你有實際意義，不建議開啟 `ignoreCommonNoiseWords`。
 
 使用：
 
@@ -118,6 +134,33 @@ Version Compare is a VS Code extension for comparing two local folders with file
 | `G-RPT_Sales_副本_1.0.xlsx` | `G-RPT_Sales_1.0.xlsx` |
 
 注意：在 VS Code `settings.json` 裡，regex 的 `\` 要寫成 `\\`。例如 regex `\d{8}` 要寫成 `"\\d{8}"`。
+
+### 強制配對 Force Match
+
+如果兩個檔案名字差太多，套用 preset / regex 後仍分成 `LeftOnly` 和 `RightOnly`，可以用 Force Match。
+
+操作方式：
+
+1. 先執行 Compare。
+2. 在分頁 UI 找到 `LeftOnly` 或 `RightOnly` row。
+3. 按 `Force`。
+4. 從另一側候選清單選擇要配對的檔案。
+5. Extension 會寫入 `versionCompare.manualMatches`，並自動重新 Compare。
+
+Force Match 可以跨 matchKey、跨 type、甚至跨副檔名。這是使用者明確指定的 override，因此優先於自動配對規則。
+
+設定儲存範例：
+
+```json
+{
+  "versionCompare.manualMatches": {
+    "manual::Dept/A/G-RPT_Sales_Main_1.0.xlsx::Dept/A/G-RPT_Revenue_Main_9.9.xlsx": {
+      "leftRelPath": "Dept/A/G-RPT_Sales_Main_1.0.xlsx",
+      "rightRelPath": "Dept/A/G-RPT_Revenue_Main_9.9.xlsx"
+    }
+  }
+}
+```
 
 ### 版本號 regex
 
@@ -274,6 +317,8 @@ Version Compare is a VS Code extension for comparing two local folders with file
 {
   "versionCompare.matching.scope": "sameFolder",
   "versionCompare.matching.includeTypePrefix": true,
+  "versionCompare.matching.preset.ignoreParenthesizedText": true,
+  "versionCompare.matching.preset.ignoreCopyMarkers": true,
   "versionCompare.matching.ignoreNamePatterns": [
     "[()#]",
     "\\[[^\\]]*\\]",
@@ -317,6 +362,7 @@ Version Compare is a VS Code extension for comparing two local folders with file
 4. Review the Left / Status / Right table.
 5. Click `Diff` on paired rows to open VS Code's built-in diff viewer.
 6. Click `Pick` on ambiguous rows to manually choose a match.
+7. Click `Force` on `LeftOnly` or `RightOnly` rows to force a pair with a file from the opposite side.
 
 Available commands:
 
@@ -326,6 +372,7 @@ Available commands:
 - `Version Compare: Compare`
 - `Version Compare: Refresh`
 - `Version Compare: Change Settings and Re-compare`
+- `Force Match...` from the `LeftOnly` / `RightOnly` context menu
 
 ### Subfolder Matching
 
@@ -355,6 +402,20 @@ To match anywhere across subfolders:
 Use `anywhere` carefully because it can create false positives.
 
 ### Ignoring Specific Characters Or Text
+
+If you do not want to write regex manually, start with the built-in presets. These appear as checkbox settings in VS Code Settings UI. You can also run `Version Compare: Change Settings and Re-compare` and choose `Toggle preset ignore rules`.
+
+| Checkbox setting | Meaning | Regex |
+| --- | --- | --- |
+| `versionCompare.matching.preset.ignoreParentheses` | Ignore `(` and `)` | `[()]` |
+| `versionCompare.matching.preset.ignoreParenthesizedText` | Ignore full parenthesized text such as `(old)` | `\\([^)]*\\)` |
+| `versionCompare.matching.preset.ignoreSquareBrackets` | Ignore `[` and `]` | `[\\[\\]]` |
+| `versionCompare.matching.preset.ignoreBracketedText` | Ignore full bracketed text such as `[old]` | `\\[[^\\]]*\\]` |
+| `versionCompare.matching.preset.ignoreHashMarks` | Ignore `#` and `＃` | `[#＃]` |
+| `versionCompare.matching.preset.ignoreCopyMarkers` | Ignore `copy`, `副本`, `複本`, and `拷貝` | `(?:copy\|副本\|複本\|拷貝)` |
+| `versionCompare.matching.preset.ignoreCommonNoiseWords` | Ignore `draft`, `final`, `old`, `new`, `最新版`, etc. | `(?:draft\|final\|old\|new\|最新版\|新版\|舊版)` |
+
+Preset patterns are combined with custom `ignoreNamePatterns`. Use `ignoreCommonNoiseWords` carefully because those words can be meaningful.
 
 Use:
 
@@ -403,6 +464,20 @@ Ignore `copy` or `副本`:
 ```
 
 In VS Code `settings.json`, escape regex backslashes twice. Regex `\d{8}` must be written as `"\\d{8}"`.
+
+### Force Match
+
+If two files are still split into `LeftOnly` and `RightOnly`, use Force Match.
+
+Steps:
+
+1. Run Compare.
+2. Find a `LeftOnly` or `RightOnly` row in the compare tab.
+3. Click `Force`.
+4. Select a file from the opposite side.
+5. The extension writes a `versionCompare.manualMatches` override and re-runs Compare.
+
+Force Match can pair files across different match keys, types, or extensions because it is an explicit user override.
 
 ### Version Regex
 

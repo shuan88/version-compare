@@ -2,7 +2,7 @@
   "name": "version-compare",
   "displayName": "Version Compare",
   "description": "Compare two folders in VS Code with version/date-aware filename matching.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "local",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -34,6 +34,7 @@
     "onCommand:versionCompare.revealInExplorer",
     "onCommand:versionCompare.copyPaths",
     "onCommand:versionCompare.pickMatch",
+    "onCommand:versionCompare.forceMatch",
     "onCommand:versionCompare.ignoreKey",
     "onCommand:versionCompare.exportJson",
     "onCommand:versionCompare.exportCsv"
@@ -120,6 +121,11 @@
         "category": "Version Compare"
       },
       {
+        "command": "versionCompare.forceMatch",
+        "title": "Force Match...",
+        "category": "Version Compare"
+      },
+      {
         "command": "versionCompare.ignoreKey",
         "title": "Ignore this Key",
         "category": "Version Compare"
@@ -178,6 +184,11 @@
           "group": "inline@1"
         },
         {
+          "command": "versionCompare.forceMatch",
+          "when": "view == versionCompare.results && viewItem =~ /leftOnly|rightOnly/",
+          "group": "inline@1"
+        },
+        {
           "command": "versionCompare.openLeft",
           "when": "view == versionCompare.results && viewItem =~ /paired|leftOnly|error/",
           "group": "navigation@1"
@@ -226,6 +237,10 @@
         },
         {
           "command": "versionCompare.pickMatch",
+          "when": "false"
+        },
+        {
+          "command": "versionCompare.forceMatch",
           "when": "false"
         },
         {
@@ -304,6 +319,41 @@
           },
           "default": [],
           "description": "Regex patterns removed from the filename stem after type-prefix extraction and before tokenization. Use this to ignore specific characters or marker text during matching."
+        },
+        "versionCompare.matching.preset.ignoreParentheses": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preset regex: ignore the characters ( and ) during filename matching."
+        },
+        "versionCompare.matching.preset.ignoreParenthesizedText": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preset regex: ignore complete parenthesized text such as (old) or (reviewed)."
+        },
+        "versionCompare.matching.preset.ignoreSquareBrackets": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preset regex: ignore the characters [ and ] during filename matching."
+        },
+        "versionCompare.matching.preset.ignoreBracketedText": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preset regex: ignore complete bracketed text such as [old] or [reviewed]."
+        },
+        "versionCompare.matching.preset.ignoreHashMarks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preset regex: ignore # and full-width ＃ during filename matching."
+        },
+        "versionCompare.matching.preset.ignoreCopyMarkers": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preset regex: ignore copy markers such as copy, 副本, 複本, and 拷貝."
+        },
+        "versionCompare.matching.preset.ignoreCommonNoiseWords": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preset regex: ignore draft/final/old/new and common Chinese version marker words. Use carefully because these words can be meaningful."
         },
         "versionCompare.disambiguation.strategy": {
           "type": "string",
