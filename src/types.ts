@@ -6,6 +6,7 @@ export type ExtPolicy = "sameExtOnly";
 export type DisambiguationStrategy = "minDistanceGreedy" | "latestOnEachSide" | "manualPreferred";
 export type ContentCompareMethod = "size+hash" | "size+mtime" | "sizeOnly";
 export type DisplayMode = "coreKey" | "originalName";
+export type AiHttpMethod = "POST" | "PUT" | "PATCH";
 
 export interface VersionCompareConfig {
   excludeGlobs: string[];
@@ -27,6 +28,20 @@ export interface VersionCompareConfig {
   manualMatches: Record<string, ManualMatch>;
   ignoreKeys: string[];
   displayMode: DisplayMode;
+  importedRegexConfigSource?: string;
+  ai: AiConfig;
+}
+
+export interface AiConfig {
+  endpoint: string;
+  method: AiHttpMethod;
+  model: string;
+  apiKeyEnv: string;
+  apiKey: string;
+  headersJson: string;
+  bodyTemplateJson: string;
+  responseTextPath: string;
+  timeoutMs: number;
 }
 
 export interface ManualMatch {

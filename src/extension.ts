@@ -1,8 +1,12 @@
 import * as path from "path";
+import * as fs from "fs/promises";
 import * as vscode from "vscode";
+import { AiApiError, callAiForRegex } from "./aiClient";
 import { classifyPairedItems } from "./comparer";
 import { loadConfig, PRESET_IGNORE_RULES, type PresetIgnoreRule, updateWorkspaceSetting } from "./config";
+import { buildGptDebugPackage } from "./gptDebug";
 import { buildMatchResults } from "./matcher";
+import { parseImportedRegexConfig } from "./regexConfig";
 import { MaxFilesExceededError, scanFolder } from "./scanner";
 import { diffTitle, VersionCompareTreeProvider } from "./tree";
 import { CompareViewPanel, type CompareViewState } from "./webview";
@@ -19,6 +23,8 @@ import type {
 const LEFT_FOLDER_KEY = "versionCompare.leftFolder";
 const RIGHT_FOLDER_KEY = "versionCompare.rightFolder";
 const MANUAL_MATCHES_STATE_KEY = "manualMatches";
+const IMPORTED_REGEX_CONFIG_KEY = "importedRegexConfig";
+const IMPORTED_REGEX_CONFIG_SOURCE_KEY = "importedRegexConfigSource";
 
 interface PresetIgnoreQuickPickItem extends vscode.QuickPickItem {
   rule: PresetIgnoreRule;
@@ -111,6 +117,12 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     exportJson: async () => exportJson(treeProvider.getResult()),
     exportCsv: async () => exportCsv(treeProvider.getResult()),
+    exportGptDebugPackage: async () => exportGptDebugPackage(treeProvider.getResult()),
+    askGptForRegex: async () => askGptForRegex(treeProvider.getResult(), output),
+    importRegexConfig: async () => {
+      await importRegexConfig(context, treeProvider, statusBar, output);
+      compareView.updateState();
+    },
   });
 
   context.subscriptions.push(
@@ -197,6 +209,16 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("versionCompare.exportCsv", async () => {
       await exportCsv(treeProvider.getResult());
+    }),
+    vscode.commands.registerCommand("versionCompare.exportGptDebugPackage", async () => {
+      await exportGptDebugPackage(treeProvider.getResult());
+    }),
+    vscode.commands.registerCommand("versionCompare.askGptForRegex", async () => {
+      await askGptForRegex(treeProvider.getResult(), output);
+    }),
+    vscode.commands.registerCommand("versionCompare.importRegexConfig", async () => {
+      await importRegexConfig(context, treeProvider, statusBar, output);
+      compareView.updateState();
     }),
   );
 
@@ -720,6 +742,144 @@ async function exportCsv(result: CompareResult | undefined): Promise<void> {
   await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(csv));
 }
 
+async function exportGptDebugPackage(result: CompareResult | undefined): Promise<void> {
+  if (!result) {
+    void vscode.window.showWarningMessage("No Version Compare result to export. Run Compare first.");
+    return;
+  }
+  const uri = await vscode.window.showSaveDialog({
+    defaultUri: vscode.Uri.file("version-compare-gpt-debug.md"),
+    filters: { Markdown: ["md"], Text: ["txt"] },
+  });
+  if (!uri) {
+    return;
+  }
+
+  const debugPackage = buildGptDebugPackage(result, result.config.importedRegexConfigSource);
+  await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(debugPackage.markdown));
+}
+
+async function askGptForRegex(result: CompareResult | undefined, output: vscode.OutputChannel): Promise<void> {
+  if (!result) {
+    void vscode.window.showWarningMessage("No Version Compare result to send. Run Compare first.");
+    return;
+  }
+  const debugPackage = buildGptDebugPackage(result, result.config.importedRegexConfigSource);
+  output.appendLine("");
+  output.appendLine(`[AI Regex] ${new Date().toISOString()}`);
+  output.appendLine(`Endpoint: ${result.config.ai.endpoint}`);
+  output.appendLine(`Model: ${result.config.ai.model}`);
+
+  try {
+    const aiResult = await callAiForRegex(debugPackage.prompt, result.config.ai);
+    output.appendLine(`AI response status: ${aiResult.status}`);
+    output.appendLine("AI raw response:");
+    output.appendLine(aiResult.rawText);
+    const document = await vscode.workspace.openTextDocument({
+      language: "json",
+      content: aiResult.text,
+    });
+    await vscode.window.showTextDocument(document, { preview: false });
+  } catch (error) {
+    if (error instanceof AiApiError) {
+      output.appendLine(`AI API error: ${error.status} ${error.statusText}`);
+      output.appendLine("AI raw error body:");
+      output.appendLine(error.rawBody);
+      output.show(true);
+      void vscode.window.showErrorMessage(`AI API error: ${error.status} ${error.statusText}. Raw response is in the Version Compare output.`);
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`AI request failed: ${message}`);
+    output.show(true);
+    void vscode.window.showErrorMessage(`AI request failed: ${message}`);
+  }
+}
+
+async function importRegexConfig(
+  context: vscode.ExtensionContext,
+  treeProvider: VersionCompareTreeProvider,
+  statusBar: vscode.StatusBarItem,
+  output: vscode.OutputChannel,
+): Promise<void> {
+  const action = await vscode.window.showQuickPick(
+    [
+      { id: "path", label: "Paste JSON file path", description: "Use a local regex config JSON file path." },
+      { id: "choose", label: "Choose JSON file", description: "Pick a regex config JSON file." },
+      { id: "json", label: "Paste JSON directly", description: "Paste the config JSON text." },
+      { id: "clear", label: "Clear imported regex config", description: "Return to settings and preset rules only." },
+    ],
+    { title: "Import Regex Config", placeHolder: "Choose how to import regex settings for compare." },
+  );
+  if (!action) {
+    return;
+  }
+
+  if (action.id === "clear") {
+    await context.workspaceState.update(IMPORTED_REGEX_CONFIG_KEY, undefined);
+    await context.workspaceState.update(IMPORTED_REGEX_CONFIG_SOURCE_KEY, undefined);
+    output.appendLine("Cleared imported regex config.");
+    await runCompare(context, treeProvider, statusBar, output);
+    return;
+  }
+
+  let raw = "";
+  let source = "";
+  try {
+    if (action.id === "path") {
+      const filePath = await vscode.window.showInputBox({
+        title: "Regex config JSON file path",
+        prompt: "Paste a local path to a regex config JSON file.",
+        ignoreFocusOut: true,
+      });
+      if (!filePath) {
+        return;
+      }
+      source = expandHomePath(filePath.trim());
+      raw = await fs.readFile(source, "utf8");
+    } else if (action.id === "choose") {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        filters: { JSON: ["json"], "All Files": ["*"] },
+        title: "Choose Regex Config JSON",
+      });
+      if (!picked?.[0]) {
+        return;
+      }
+      source = picked[0].fsPath;
+      raw = await fs.readFile(source, "utf8");
+    } else {
+      const pasted = await vscode.window.showInputBox({
+        title: "Paste Regex Config JSON",
+        prompt: "Paste JSON with matching.versionPatterns, matching.ignoreNamePatterns, datePattern, scope, or includeTypePrefix.",
+        ignoreFocusOut: true,
+        value: "{\n  \"matching\": {\n    \"ignoreNamePatterns\": []\n  }\n}",
+      });
+      if (!pasted) {
+        return;
+      }
+      raw = pasted;
+      source = "pasted JSON";
+    }
+
+    const imported = parseImportedRegexConfig(raw);
+    await context.workspaceState.update(IMPORTED_REGEX_CONFIG_KEY, imported);
+    await context.workspaceState.update(IMPORTED_REGEX_CONFIG_SOURCE_KEY, source);
+    output.appendLine(`Imported regex config from ${source}`);
+    output.appendLine(JSON.stringify(imported, null, 2));
+    await runCompare(context, treeProvider, statusBar, output);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`Regex config import failed: ${message}`);
+    output.appendLine(raw);
+    output.show(true);
+    void vscode.window.showErrorMessage(`Regex config import failed: ${message}`);
+  }
+}
+
 function toReportObject(result: CompareResult): unknown {
   return {
     leftRoot: result.leftRoot.fsPath,
@@ -773,6 +933,17 @@ function collectPaths(item: MatchResultItem): string[] {
     ...(item.leftCandidates?.map((entry) => entry.uri.fsPath) ?? []),
     ...(item.rightCandidates?.map((entry) => entry.uri.fsPath) ?? []),
   ].filter((value): value is string => Boolean(value));
+}
+
+function expandHomePath(filePath: string): string {
+  if (filePath === "~") {
+    return process.env.HOME ?? filePath;
+  }
+  if (filePath.startsWith("~/")) {
+    const home = process.env.HOME;
+    return home ? path.join(home, filePath.slice(2)) : filePath;
+  }
+  return filePath;
 }
 
 async function treeViewRevealFirstResult(treeProvider: VersionCompareTreeProvider): Promise<void> {

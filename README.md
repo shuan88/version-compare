@@ -33,6 +33,9 @@ Version Compare is a VS Code extension for comparing two local folders with file
 - `Version Compare: Compare`
 - `Version Compare: Refresh`
 - `Version Compare: Change Settings and Re-compare`
+- `Version Compare: Export GPT Debug Package...`
+- `Version Compare: Ask GPT for Regex Suggestions`
+- `Version Compare: Import Regex Config...`
 - `Force Match...`，在 `LeftOnly` / `RightOnly` 項目的 context menu 中使用
 
 左側 Explorer 也會顯示 `Version Compare` TreeView。
@@ -158,6 +161,167 @@ Force Match 可以跨 matchKey、跨 type、甚至跨副檔名。這是使用者
       "leftRelPath": "Dept/A/G-RPT_Sales_Main_1.0.xlsx",
       "rightRelPath": "Dept/A/G-RPT_Revenue_Main_9.9.xlsx"
     }
+  }
+}
+```
+
+### Debug 模式：匯出給 GPT 網頁版使用
+
+如果目前規則無法成功配對，可以先執行 Compare，再執行：
+
+```text
+Version Compare: Export GPT Debug Package...
+```
+
+這會輸出一個 Markdown 檔，內容包含：
+
+- 適合貼到 GPT 網頁版的 prompt。
+- Left / Right 的完整檔名清單。
+- 相對路徑、子資料夾、檔名、副檔名。
+- 目前 parser 解析出的 `typePrefix`、`coreKey`、`versionRaw`、`dateRaw`。
+- 目前 compare 結果與 ambiguous / left-only / right-only 狀態。
+- 要求 GPT 回傳可匯入的 JSON regex config。
+
+建議把整個 Markdown 檔內容貼到 GPT，請它回傳 JSON，不要回傳 markdown。回傳格式範例：
+
+```json
+{
+  "matching": {
+    "scope": "sameFolder",
+    "includeTypePrefix": true,
+    "ignoreNamePatterns": [
+      "\\([^)]*\\)",
+      "(?:copy|副本)"
+    ],
+    "versionPatterns": [
+      "^(?:v|ver|version)?\\d+(?:\\.\\d+)*(?:p\\d+)?$",
+      "^rev\\d+$"
+    ],
+    "datePattern": "^\\d{8}$"
+  },
+  "notes": [
+    "Ignore parenthesized labels and copy markers.",
+    "Treat revNN as a version token."
+  ]
+}
+```
+
+### 在 VS Code 內呼叫 GPT API
+
+也可以直接執行：
+
+```text
+Version Compare: Ask GPT for Regex Suggestions
+```
+
+Extension 會用同一份 debug prompt 呼叫 API，並把模型回覆開成一個新文件。若 API 回錯，`Version Compare` OutputChannel 會顯示：
+
+- HTTP status。
+- raw response body。
+- JSON template parse error。
+- timeout 或 network error。
+
+設定項目：
+
+```json
+{
+  "versionCompare.ai.endpoint": "https://api.openai.com/v1/responses",
+  "versionCompare.ai.method": "POST",
+  "versionCompare.ai.model": "gpt-4.1",
+  "versionCompare.ai.apiKeyEnv": "OPENAI_API_KEY",
+  "versionCompare.ai.apiKey": "",
+  "versionCompare.ai.headersJson": "{\"Authorization\":\"Bearer {{apiKey}}\",\"Content-Type\":\"application/json\"}",
+  "versionCompare.ai.bodyTemplateJson": "{\"model\":\"{{model}}\",\"input\":\"{{prompt}}\"}",
+  "versionCompare.ai.responseTextPath": "output_text",
+  "versionCompare.ai.timeoutMs": 60000
+}
+```
+
+如果公司 API 包了多層，可以改 endpoint、headers、body template。例如公司 wrapper 需要 `deployment` 和 `apiVersion`：
+
+```json
+{
+  "versionCompare.ai.endpoint": "https://company.example.com/ai/generate",
+  "versionCompare.ai.model": "company-gpt-regex",
+  "versionCompare.ai.headersJson": "{\"x-api-key\":\"{{apiKey}}\",\"Content-Type\":\"application/json\"}",
+  "versionCompare.ai.bodyTemplateJson": "{\"deployment\":\"{{model}}\",\"apiVersion\":\"2026-01-01\",\"messages\":[{\"role\":\"user\",\"content\":\"{{prompt}}\"}]}",
+  "versionCompare.ai.responseTextPath": "data.answer"
+}
+```
+
+`{{apiKey}}`、`{{model}}`、`{{prompt}}` 會自動替換。建議把 key 放在環境變數，不要寫進 settings：
+
+```sh
+export OPENAI_API_KEY="your-key"
+```
+
+Node.js 版本的等效呼叫範例：
+
+```js
+const endpoint = process.env.VERSION_COMPARE_AI_ENDPOINT || "https://api.openai.com/v1/responses";
+const apiKey = process.env.OPENAI_API_KEY;
+const model = process.env.VERSION_COMPARE_AI_MODEL || "gpt-4.1";
+const prompt = "Paste the Version Compare GPT Debug Package prompt here.";
+
+const response = await fetch(endpoint, {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${apiKey}`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    model,
+    input: prompt
+  })
+});
+
+const raw = await response.text();
+if (!response.ok) {
+  console.error("HTTP", response.status, response.statusText);
+  console.error(raw);
+  process.exit(1);
+}
+
+const json = JSON.parse(raw);
+console.log(json.output_text ?? raw);
+```
+
+### 匯入每次 compare 使用的 regex config
+
+如果 GPT 回傳了 JSON config，可以執行：
+
+```text
+Version Compare: Import Regex Config...
+```
+
+支援三種方式：
+
+- 貼上 JSON 檔案路徑。
+- 用檔案選擇器選 JSON。
+- 直接貼上 JSON 內容。
+
+匯入後會存在 workspace state，並立即重新 Compare。匯入設定會和 VS Code settings / preset 合併，其中匯入的 `versionPatterns`、`datePattern`、`scope`、`includeTypePrefix` 會覆蓋一般設定，`ignoreNamePatterns` 則會附加到既有 preset / custom ignore 規則。
+
+最小可匯入檔案：
+
+```json
+{
+  "matching": {
+    "ignoreNamePatterns": ["\\([^)]*\\)"]
+  }
+}
+```
+
+完整可匯入檔案：
+
+```json
+{
+  "matching": {
+    "scope": "sameFolder",
+    "includeTypePrefix": true,
+    "ignoreNamePatterns": ["\\([^)]*\\)", "(?:copy|副本)"],
+    "versionPatterns": ["^rev\\d+$", "^(?:v)?\\d+(?:\\.\\d+)*$"],
+    "datePattern": "^\\d{8}$"
   }
 }
 ```
@@ -372,6 +536,9 @@ Available commands:
 - `Version Compare: Compare`
 - `Version Compare: Refresh`
 - `Version Compare: Change Settings and Re-compare`
+- `Version Compare: Export GPT Debug Package...`
+- `Version Compare: Ask GPT for Regex Suggestions`
+- `Version Compare: Import Regex Config...`
 - `Force Match...` from the `LeftOnly` / `RightOnly` context menu
 
 ### Subfolder Matching
@@ -478,6 +645,164 @@ Steps:
 5. The extension writes a `versionCompare.manualMatches` override and re-runs Compare.
 
 Force Match can pair files across different match keys, types, or extensions because it is an explicit user override.
+
+### Debug Mode For ChatGPT Web
+
+If the current rules cannot match your filenames, run Compare first, then run:
+
+```text
+Version Compare: Export GPT Debug Package...
+```
+
+The exported Markdown file contains:
+
+- A ready-to-paste GPT prompt.
+- Full Left / Right filename inventory.
+- Relative paths, subfolders, filenames, and extensions.
+- Parsed `typePrefix`, `coreKey`, `versionRaw`, and `dateRaw`.
+- Current compare statuses, including ambiguous / left-only / right-only rows.
+- A JSON output schema for regex settings.
+
+Paste the whole Markdown content into ChatGPT and ask it to return JSON only.
+
+Expected response shape:
+
+```json
+{
+  "matching": {
+    "scope": "sameFolder",
+    "includeTypePrefix": true,
+    "ignoreNamePatterns": [
+      "\\([^)]*\\)",
+      "(?:copy|副本)"
+    ],
+    "versionPatterns": [
+      "^(?:v|ver|version)?\\d+(?:\\.\\d+)*(?:p\\d+)?$",
+      "^rev\\d+$"
+    ],
+    "datePattern": "^\\d{8}$"
+  },
+  "notes": [
+    "Ignore parenthesized labels and copy markers.",
+    "Treat revNN as a version token."
+  ]
+}
+```
+
+### Calling A GPT API From VS Code
+
+Run:
+
+```text
+Version Compare: Ask GPT for Regex Suggestions
+```
+
+The extension sends the same debug prompt to a configurable API endpoint and opens the model response in a new editor. If the API returns an error, the `Version Compare` OutputChannel shows the raw HTTP status and response body.
+
+Settings:
+
+```json
+{
+  "versionCompare.ai.endpoint": "https://api.openai.com/v1/responses",
+  "versionCompare.ai.method": "POST",
+  "versionCompare.ai.model": "gpt-4.1",
+  "versionCompare.ai.apiKeyEnv": "OPENAI_API_KEY",
+  "versionCompare.ai.apiKey": "",
+  "versionCompare.ai.headersJson": "{\"Authorization\":\"Bearer {{apiKey}}\",\"Content-Type\":\"application/json\"}",
+  "versionCompare.ai.bodyTemplateJson": "{\"model\":\"{{model}}\",\"input\":\"{{prompt}}\"}",
+  "versionCompare.ai.responseTextPath": "output_text",
+  "versionCompare.ai.timeoutMs": 60000
+}
+```
+
+For company wrapper APIs, change the endpoint, headers, body template, and response text path:
+
+```json
+{
+  "versionCompare.ai.endpoint": "https://company.example.com/ai/generate",
+  "versionCompare.ai.model": "company-gpt-regex",
+  "versionCompare.ai.headersJson": "{\"x-api-key\":\"{{apiKey}}\",\"Content-Type\":\"application/json\"}",
+  "versionCompare.ai.bodyTemplateJson": "{\"deployment\":\"{{model}}\",\"apiVersion\":\"2026-01-01\",\"messages\":[{\"role\":\"user\",\"content\":\"{{prompt}}\"}]}",
+  "versionCompare.ai.responseTextPath": "data.answer"
+}
+```
+
+Supported placeholders:
+
+- `{{apiKey}}`
+- `{{model}}`
+- `{{prompt}}`
+
+Node.js equivalent using `fetch`:
+
+```js
+const endpoint = process.env.VERSION_COMPARE_AI_ENDPOINT || "https://api.openai.com/v1/responses";
+const apiKey = process.env.OPENAI_API_KEY;
+const model = process.env.VERSION_COMPARE_AI_MODEL || "gpt-4.1";
+const prompt = "Paste the Version Compare GPT Debug Package prompt here.";
+
+const response = await fetch(endpoint, {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${apiKey}`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    model,
+    input: prompt
+  })
+});
+
+const raw = await response.text();
+if (!response.ok) {
+  console.error("HTTP", response.status, response.statusText);
+  console.error(raw);
+  process.exit(1);
+}
+
+const json = JSON.parse(raw);
+console.log(json.output_text ?? raw);
+```
+
+### Importing Regex Config Per Compare
+
+Run:
+
+```text
+Version Compare: Import Regex Config...
+```
+
+Import options:
+
+- Paste a JSON file path.
+- Choose a JSON file.
+- Paste JSON directly.
+
+The imported config is stored in workspace state and Compare runs immediately. Imported `versionPatterns`, `datePattern`, `scope`, and `includeTypePrefix` override normal settings. Imported `ignoreNamePatterns` are appended to preset and custom ignore rules.
+
+Minimal import file:
+
+```json
+{
+  "matching": {
+    "ignoreNamePatterns": ["\\([^)]*\\)"]
+  }
+}
+```
+
+Full import file:
+
+```json
+{
+  "matching": {
+    "scope": "sameFolder",
+    "includeTypePrefix": true,
+    "ignoreNamePatterns": ["\\([^)]*\\)", "(?:copy|副本)"],
+    "versionPatterns": ["^rev\\d+$", "^(?:v)?\\d+(?:\\.\\d+)*$"],
+    "datePattern": "^\\d{8}$"
+  }
+}
+```
 
 ### Version Regex
 

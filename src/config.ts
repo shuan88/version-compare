@@ -6,9 +6,11 @@ import type {
   ExtPolicy,
   ManualMatch,
   MatchScope,
+  AiHttpMethod,
   VersionCompareConfig,
 } from "./types";
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_VERSION_PATTERNS } from "./defaults";
+import type { ImportedRegexConfig } from "./regexConfig";
 
 export { DEFAULT_EXCLUDE_GLOBS, DEFAULT_VERSION_PATTERNS } from "./defaults";
 
@@ -76,21 +78,32 @@ export function loadConfig(context?: vscode.ExtensionContext): VersionCompareCon
   const config = vscode.workspace.getConfiguration("versionCompare");
   const configuredManualMatches = config.get<Record<string, ManualMatch>>("manualMatches", {});
   const workspaceManualMatches = context?.workspaceState.get<Record<string, ManualMatch>>("manualMatches", {}) ?? {};
+  const importedRegexConfig = context?.workspaceState.get<ImportedRegexConfig>("importedRegexConfig");
+  const importedRegexConfigSource = context?.workspaceState.get<string>("importedRegexConfigSource");
   const presetIgnorePatterns = PRESET_IGNORE_RULES
     .filter((rule) => config.get<boolean>(rule.settingKey, false))
     .map((rule) => rule.pattern);
   const customIgnorePatterns = config.get<string[]>("matching.ignoreNamePatterns", []);
+  const settingsMatching = {
+    scope: config.get<MatchScope>("matching.scope", "sameFolder"),
+    includeTypePrefix: config.get<boolean>("matching.includeTypePrefix", true),
+    extPolicy: config.get<ExtPolicy>("matching.extPolicy", "sameExtOnly"),
+    versionPatterns: config.get<string[]>("matching.versionPatterns", DEFAULT_VERSION_PATTERNS),
+    datePattern: config.get<string>("matching.datePattern", "^\\d{8}$"),
+    ignoreNamePatterns: [...presetIgnorePatterns, ...customIgnorePatterns],
+  };
 
   return {
     excludeGlobs: config.get<string[]>("excludeGlobs", DEFAULT_EXCLUDE_GLOBS),
     maxFiles: config.get<number>("maxFiles", 50000),
     matching: {
-      scope: config.get<MatchScope>("matching.scope", "sameFolder"),
-      includeTypePrefix: config.get<boolean>("matching.includeTypePrefix", true),
-      extPolicy: config.get<ExtPolicy>("matching.extPolicy", "sameExtOnly"),
-      versionPatterns: config.get<string[]>("matching.versionPatterns", DEFAULT_VERSION_PATTERNS),
-      datePattern: config.get<string>("matching.datePattern", "^\\d{8}$"),
-      ignoreNamePatterns: [...presetIgnorePatterns, ...customIgnorePatterns],
+      ...settingsMatching,
+      ...importedRegexConfig,
+      extPolicy: settingsMatching.extPolicy,
+      ignoreNamePatterns: [
+        ...settingsMatching.ignoreNamePatterns,
+        ...(importedRegexConfig?.ignoreNamePatterns ?? []),
+      ],
     },
     disambiguation: {
       strategy: config.get<DisambiguationStrategy>("disambiguation.strategy", "minDistanceGreedy"),
@@ -107,6 +120,24 @@ export function loadConfig(context?: vscode.ExtensionContext): VersionCompareCon
     },
     ignoreKeys: config.get<string[]>("ignoreKeys", []),
     displayMode: config.get<DisplayMode>("displayMode", "coreKey"),
+    importedRegexConfigSource,
+    ai: {
+      endpoint: config.get<string>("ai.endpoint", "https://api.openai.com/v1/responses"),
+      method: config.get<AiHttpMethod>("ai.method", "POST"),
+      model: config.get<string>("ai.model", "gpt-4.1"),
+      apiKeyEnv: config.get<string>("ai.apiKeyEnv", "OPENAI_API_KEY"),
+      apiKey: config.get<string>("ai.apiKey", ""),
+      headersJson: config.get<string>(
+        "ai.headersJson",
+        "{\"Authorization\":\"Bearer {{apiKey}}\",\"Content-Type\":\"application/json\"}",
+      ),
+      bodyTemplateJson: config.get<string>(
+        "ai.bodyTemplateJson",
+        "{\"model\":\"{{model}}\",\"input\":\"{{prompt}}\"}",
+      ),
+      responseTextPath: config.get<string>("ai.responseTextPath", "output_text"),
+      timeoutMs: config.get<number>("ai.timeoutMs", 60000),
+    },
   };
 }
 

@@ -26,6 +26,17 @@ function config(overrides: Partial<VersionCompareConfig> = {}): VersionCompareCo
     manualMatches: {},
     ignoreKeys: [],
     displayMode: "coreKey",
+    ai: {
+      endpoint: "https://api.openai.com/v1/responses",
+      method: "POST",
+      model: "gpt-4.1",
+      apiKeyEnv: "OPENAI_API_KEY",
+      apiKey: "",
+      headersJson: "{}",
+      bodyTemplateJson: "{}",
+      responseTextPath: "output_text",
+      timeoutMs: 60000,
+    },
   };
 
   return {

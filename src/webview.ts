@@ -21,6 +21,9 @@ export interface CompareViewCallbacks {
   ignoreKey(itemId: string): Promise<void>;
   exportJson(): Promise<void>;
   exportCsv(): Promise<void>;
+  exportGptDebugPackage(): Promise<void>;
+  askGptForRegex(): Promise<void>;
+  importRegexConfig(): Promise<void>;
 }
 
 interface WebviewResultItem {
@@ -108,6 +111,15 @@ export class CompareViewPanel {
         return;
       case "exportCsv":
         await this.callbacks.exportCsv();
+        return;
+      case "exportGptDebugPackage":
+        await this.callbacks.exportGptDebugPackage();
+        return;
+      case "askGptForRegex":
+        await this.runBusyTask(() => this.callbacks.askGptForRegex());
+        return;
+      case "importRegexConfig":
+        await this.runBusyTask(() => this.callbacks.importRegexConfig());
         return;
       case "openDiff":
         if (itemId) {
@@ -498,6 +510,7 @@ export class CompareViewPanel {
         <button id="compareButton">Compare</button>
         <button class="secondary" id="refreshButton">Refresh</button>
         <button class="ghost" id="settingsButton">Settings</button>
+        <button class="ghost" id="importRegexConfig">Import Regex</button>
       </div>
     </header>
 
@@ -508,6 +521,8 @@ export class CompareViewPanel {
       <div class="actions">
         <button class="ghost" id="exportJson">Export JSON</button>
         <button class="ghost" id="exportCsv">Export CSV</button>
+        <button class="ghost" id="exportGptDebugPackage">GPT Debug</button>
+        <button class="ghost" id="askGptForRegex">Ask GPT</button>
       </div>
     </section>
 
@@ -543,8 +558,11 @@ export class CompareViewPanel {
     document.getElementById("compareButton").addEventListener("click", () => post("compare"));
     document.getElementById("refreshButton").addEventListener("click", () => post("refresh"));
     document.getElementById("settingsButton").addEventListener("click", () => post("settings"));
+    document.getElementById("importRegexConfig").addEventListener("click", () => post("importRegexConfig"));
     document.getElementById("exportJson").addEventListener("click", () => post("exportJson"));
     document.getElementById("exportCsv").addEventListener("click", () => post("exportCsv"));
+    document.getElementById("exportGptDebugPackage").addEventListener("click", () => post("exportGptDebugPackage"));
+    document.getElementById("askGptForRegex").addEventListener("click", () => post("askGptForRegex"));
 
     window.addEventListener("message", (event) => {
       const message = event.data;
@@ -568,8 +586,11 @@ export class CompareViewPanel {
       document.getElementById("compareButton").disabled = state.busy || !hasFolders;
       document.getElementById("refreshButton").disabled = state.busy || !hasFolders;
       document.getElementById("settingsButton").disabled = state.busy;
+      document.getElementById("importRegexConfig").disabled = state.busy;
       document.getElementById("exportJson").disabled = !state.result;
       document.getElementById("exportCsv").disabled = !state.result;
+      document.getElementById("exportGptDebugPackage").disabled = !state.result;
+      document.getElementById("askGptForRegex").disabled = state.busy || !state.result;
       renderSummary();
       renderFilters();
       renderContent();

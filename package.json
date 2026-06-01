@@ -2,7 +2,7 @@
   "name": "version-compare",
   "displayName": "Version Compare",
   "description": "Compare two folders in VS Code with version/date-aware filename matching.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "local",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -37,7 +37,10 @@
     "onCommand:versionCompare.forceMatch",
     "onCommand:versionCompare.ignoreKey",
     "onCommand:versionCompare.exportJson",
-    "onCommand:versionCompare.exportCsv"
+    "onCommand:versionCompare.exportCsv",
+    "onCommand:versionCompare.exportGptDebugPackage",
+    "onCommand:versionCompare.askGptForRegex",
+    "onCommand:versionCompare.importRegexConfig"
   ],
   "main": "./out/extension.js",
   "scripts": {
@@ -139,6 +142,21 @@
         "command": "versionCompare.exportCsv",
         "title": "Export CSV Report...",
         "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.exportGptDebugPackage",
+        "title": "Export GPT Debug Package...",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.askGptForRegex",
+        "title": "Ask GPT for Regex Suggestions",
+        "category": "Version Compare"
+      },
+      {
+        "command": "versionCompare.importRegexConfig",
+        "title": "Import Regex Config...",
+        "category": "Version Compare"
       }
     ],
     "views": {
@@ -170,6 +188,21 @@
           "command": "versionCompare.changeSettingsAndRecompare",
           "when": "view == versionCompare.results",
           "group": "navigation@3"
+        },
+        {
+          "command": "versionCompare.exportGptDebugPackage",
+          "when": "view == versionCompare.results",
+          "group": "navigation@4"
+        },
+        {
+          "command": "versionCompare.askGptForRegex",
+          "when": "view == versionCompare.results",
+          "group": "navigation@5"
+        },
+        {
+          "command": "versionCompare.importRegexConfig",
+          "when": "view == versionCompare.results",
+          "group": "navigation@6"
         }
       ],
       "view/item/context": [
@@ -407,6 +440,57 @@
           ],
           "default": "coreKey",
           "description": "Controls whether result labels prefer normalized core keys or original filenames."
+        },
+        "versionCompare.ai.endpoint": {
+          "type": "string",
+          "default": "https://api.openai.com/v1/responses",
+          "description": "AI API endpoint used by Ask GPT for Regex Suggestions. Can be an OpenAI endpoint or a company wrapper endpoint."
+        },
+        "versionCompare.ai.method": {
+          "type": "string",
+          "enum": [
+            "POST",
+            "PUT",
+            "PATCH"
+          ],
+          "default": "POST",
+          "description": "HTTP method for AI API requests."
+        },
+        "versionCompare.ai.model": {
+          "type": "string",
+          "default": "gpt-4.1",
+          "description": "Model value inserted into the AI request body template."
+        },
+        "versionCompare.ai.apiKeyEnv": {
+          "type": "string",
+          "default": "OPENAI_API_KEY",
+          "description": "Environment variable used for the API key when versionCompare.ai.apiKey is empty."
+        },
+        "versionCompare.ai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Optional API key. Prefer using versionCompare.ai.apiKeyEnv for security."
+        },
+        "versionCompare.ai.headersJson": {
+          "type": "string",
+          "default": "{\"Authorization\":\"Bearer {{apiKey}}\",\"Content-Type\":\"application/json\"}",
+          "description": "JSON object template for AI request headers. Supports {{apiKey}}, {{model}}, and {{prompt}} placeholders."
+        },
+        "versionCompare.ai.bodyTemplateJson": {
+          "type": "string",
+          "default": "{\"model\":\"{{model}}\",\"input\":\"{{prompt}}\"}",
+          "description": "JSON object template for the AI request body. Supports {{apiKey}}, {{model}}, and {{prompt}} placeholders."
+        },
+        "versionCompare.ai.responseTextPath": {
+          "type": "string",
+          "default": "output_text",
+          "description": "Dot path to the text field in the AI API response. Common examples: output_text, choices.0.message.content."
+        },
+        "versionCompare.ai.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "description": "Timeout in milliseconds for AI API requests."
         }
       }
     }
